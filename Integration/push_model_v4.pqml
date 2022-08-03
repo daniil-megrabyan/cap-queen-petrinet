@@ -1,0 +1,344 @@
+import QtQml 2.15
+import QtQuick 2.15
+
+import Core.Test 0.1
+import Repository.Model 0.1
+import DrOblozhko.Model 0.1
+import Conversation.Model 0.1
+
+import Core.View 0.1
+import Core.System 0.1
+import Core.Model 0.1
+import Core.Meta 0.1
+
+PetrI {
+	id: petrI
+
+	// задаем токен как в логин-модели, пока что так
+
+	property var tokenComponent: Component {
+		Token {
+			description: "Patient"
+
+			property string account: "ae@cadabra.local"
+
+			property var groupсhannel: GroupChannel {
+				onOpened: {
+					console.log("GroupChannel::onOpened");
+				}
+
+				onDumped: {
+					console.log("GroupChannel::onDumped");
+				}
+
+				onPulled: {
+					console.log("GroupChannel::onPulled");
+					if (flags === GroupChannel.PushMessage) {
+					} else if (flags === GroupChannel.ReceiveMessage) {
+					}
+				}
+
+				onIndexed: {
+						console.log("ChannelFeed.applicationConnection::onIndexed");
+				}
+				onProgressed: {
+					console.log("GroupChannel::onProgressed", value);
+				}
+			}
+
+			property var realm: Realm {
+				lazy: true
+			}
+
+			property var session: Session {
+				onRealized: {
+					console.log("Session::onRealized > A");
+				}
+				onAuthorized: {
+					console.log("Session::onAuthorized > A");
+				}
+				onFaulted: {
+					if (phase == Session.Prolongation && reject == Session.NetworkError/* && !session.hasAttached()*/) {
+						/// @todo КАК-ТО СЛОМАТЬСЯ и увидеть это в assertion
+					}
+				}
+			}
+
+			property var appointment: Appointment {
+
+			}
+			//positions: [preA]
+		}
+	}
+
+	Component.onCompleted: {
+		for (var p = 0; p < env("PATIENT_COUNT", 1); p++) {
+			petrI.tokens.push(
+								petrI.tokenComponent.createObject(
+																	petrI,
+																	{
+																		"description": "QA_acc_patient_#" + p,
+																		"account": "ae@cadabra.local",
+																		"positions": [preA]
+
+																	}
+								)
+            );
+		}
+	}
+
+	tokens: [
+
+	]
+
+	// начало пре-блока
+
+	preAssertion: Assertion {
+		id: preA
+
+		actions: [preAction1]
+
+		Assert {
+			targetAction: preAction1
+
+			onActionPrepared: {
+				/// onActionPrepared
+				/// @note перед тем как пойти на целевой Action, т.е. на preAction1
+				console.assert(!!currentToken.appointment);
+
+				console.log("preAssertion complete");
+			}
+		}
+	}
+
+	preActions: [
+		Action {
+			id: preAction1
+
+			assertions: [login_check]
+
+//			waitTimeout: 5000//ms//
+			onActed: {
+				/**
+				* @note В первую очередь меняем endpoint.
+				* Иначе, продолжать нет смысла, так как всё(так или иначе) связанно
+				* с сетевым взаимодействием(http-запросами, websocket-соединениями)
+				*/
+				var endpoint_url = "http://ace1.cadabra.systems:80";
+				//console.log(currentToken, "[", currentToken.description, "]::ENDPOINT0: ", endpoint_url);
+				currentToken.appointment.point(currentToken.realm.aceEndpoint, endpoint_url);
+				//console.log(currentToken, "[", currentToken.description, "]::ENDPOINT1: ", currentToken.realm.aceEndpoint.host);
+
+				var endpoint_url_match = endpoint_url.match(/((http[s]?|ace[s]?):\/)?\/?([^:\/\s]+)(?::([0-9]+))?((\/\w+)*\/)?([\w\-\.]*[^#?\s]+)?(.*)?(#[\w\-]+)?/);
+
+				//console.log(currentToken, "[", currentToken.description, "]::ENDPOINT2[host] ", endpoint_url_match[3], "==", currentToken.realm.aceEndpoint.host)
+				console.assert(endpoint_url_match[3] == currentToken.realm.aceEndpoint.host);
+				//console.log(currentToken, "[", currentToken.description, "]::ENDPOINT2[port]: ", endpoint_url_match[4], "==", currentToken.realm.aceEndpoint.port)
+				console.assert(endpoint_url_match[4] == currentToken.realm.aceEndpoint.port);
+				//console.log(currentToken, "::ENDPOINT2[secure]: ", (endpoint_url_match[2] == 'aces' || endpoint_url_match[2] == 'https'), "==", currentToken.realm.aceEndpoint.secure);
+				console.assert((endpoint_url_match[2] == 'aces' || endpoint_url_match[2] == 'https') == currentToken.realm.aceEndpoint.secure);
+
+				console.debug("Recoginzing %1...".arg(currentToken.account));
+				currentToken.appointment.recognize(currentToken.account);
+				console.debug("...recognized for %1 is requested!".arg(currentToken.account));
+
+				console.log("preAction complete");
+			}
+/*
+			TimeWaiter {
+				seconds: 10
+			}
+*/
+			ObjectWaiter {
+				target: currentToken.appointment
+
+				function onArranged(success) {
+					if (success) {
+						console.log("Account is aranged ");
+						/// @xxx Так не айс, потому что где будем дожидаться того, что ratify() выполнился?
+						currentToken.appointment.ratify("9999");
+						console.log("ratified?");
+					} else {
+						/// гаме овер
+						console.error("Account not arranged");
+					}
+				}
+			}
+		}
+	]
+
+	// конец пре-блока, тут проходит "---------" на граф. схеме
+
+	// пора линкаться
+
+	Assertion {
+		id: login_check
+		description: "log-in check..."
+
+		actions: [back_end_linking_a]
+
+		Assert {
+			targetAction: preAction1
+
+			onActionCompleted: {
+			}
+		}
+	}
+
+	Action {
+		id: back_end_linking_a		
+		description: "linking... ratify if arranged"
+
+		assertions: [dummy_check_a]
+
+		onActed: {
+		}
+	}
+
+	Assertion {
+		id: dummy_check_a
+		description: "linking check A..."
+
+		actions: [back_end_linking_b]
+
+		Assert {
+			targetAction: back_end_linking_a
+
+			onActionCompleted: {
+			}
+		}
+	}
+
+	Action {
+		id: back_end_linking_b
+		description: "linking... enrol if locked"
+
+		assertions: [dummy_check_b]
+
+		ObjectWaiter {
+			target: currentToken.appointment
+
+			function onVerified(success) {
+				if (success) {
+					console.log("Account is retified");
+					currentToken.appointment.enroll("9999");
+					console.log("log-in sucessfull!");
+				} else {
+					/// гаме овер
+					console.error("Account `" + currentToken.account + "` was not locked for some reason or does not exist :(");
+				}
+			}
+		}
+
+		onActed: {
+			currentToken.groupchannel.open(currentToken.session.handle(currentToken.appointment.channelId, currentToken.appointment.channelHandle, currentToken.appointment.channelScheme));
+		}
+	}
+
+	Assertion {
+		id: dummy_check_b
+		description: "linking check B..."
+
+		actions: [lazy_fetch]
+
+		Assert {
+			targetAction: back_end_linking_b
+
+			onActionCompleted: {
+				if (currentToken.groupchannel.isOpened) {
+					// Commit/Confirm reading messages upto 0 from the head (in other words: all currently available in the feed)
+					currentToken.groupchannel.read(0, currentToken.groupchannel.FeedOffset);
+					console.log("linked sucessfully!")
+				} else {
+					console.fatal("Omg! Game over");
+				}
+			}
+		}
+	}
+
+    // подгружаем фид
+
+	Action {
+		id: lazy_fetch
+
+		assertions: [fetch_check]
+
+		onActed: {
+			console.log("fetching...");
+			currentToken.groupchannel.fetch(currentToken.groupchannel.FeedRotate, currentToken.groupchannel.Tail);
+		}
+	}
+
+	Assertion {
+		id: fetch_check
+
+		actions: [basic_push]
+
+		Assert {
+			targetAction: lazy_fetch
+
+			onActionCompleted: {
+				console.log("fetching check...");
+				if (currentToken.groupchannel.hasUnloadedMessages) {
+					//
+					console.error("fetching fail");
+				} else {
+					console.log("fetched sucessfully");
+				}
+			}
+
+		}
+	}
+/*
+    // драфтим
+	Action {
+		id: do_draft
+
+		assertions: [draft_check]
+	}
+
+	Assertion {
+		id: draft_check
+	}
+*/
+
+	// пушим
+	Action {
+		id: basic_push
+
+		assertions: [push_check]
+
+		onActed: {
+			console.log("pushing...")
+			currentToken.groupchannel.push("Abra-Cadabra!")
+		}
+	}
+
+	Assertion {
+		id: push_check
+
+		actions: [happy_end]
+
+		Assert {
+			targetAction: basic_push
+
+			onActionCompleted: {
+				console.log("pushing check...");
+
+				if (currentToken.groupchannel.lastMessage.isReceived) {
+					console.log("message sent and received");
+				} else {
+					console.error("message not received");
+				}
+			}
+		}
+	}
+
+	Action {
+		id: happy_end
+
+		onActed: {
+			console.log("happy end c:");
+		}
+	}
+}
